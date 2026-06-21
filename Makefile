@@ -2,12 +2,20 @@
 # Makefile -- CM-203 Project 2, A64 Maze Runner
 #
 # Native on the Raspberry Pi (aarch64) this Just Works:
-#     make run        # build + watch the animated solve
-#     make verify     # confirm the A64 result matches the C reference -> PASS
-#     make debug      # break in solve(), inspect the recursive call stack
+#     make run          # build + watch the animated solve (with live call stack)
+#     make unsolvable   # watch it fail on a maze with no path (exit code 1)
+#     make slow / fast  # same solve, slower / faster animation (for presenting)
+#     make demo         # guided, paused walkthrough for the presentation
+#     make verify       # confirm the A64 result matches the C reference -> PASS
+#     make debug        # break in solve(), inspect the recursive call stack
 #
-# To build/run OFF a Pi (x86 dev box) with a cross toolchain + emulator, override:
+# Off a Pi (x86 dev box) with a cross toolchain + emulator, override CC and RUN:
 #     make verify CC=aarch64-linux-gnu-gcc RUN="qemu-aarch64 -L /usr/aarch64-linux-gnu"
+#
+# Interface knobs (environment variables, read by the program):
+#     MAZE_ANIM=0    quiet: no animation, just the canonical "path:" line
+#     MAZE_COLOR=0   disable ANSI colour
+#     MAZE_DELAY=N   per-step delay in milliseconds (default 45)
 # ============================================================================
 
 CC      ?= gcc                 # native cc on the Pi; override for cross builds
@@ -15,7 +23,7 @@ RUN     ?=                      # empty on the Pi; set to qemu-... for emulation
 CFLAGS  ?= -Wall -O2
 BUILD    = build
 
-.PHONY: all run debug ref verify clean
+.PHONY: all run unsolvable slow fast demo debug ref verify clean
 
 # --- assemble + link the A64 program (gcc drives cpp -> as -> ld, links libc) --
 all: $(BUILD)/maze
@@ -35,6 +43,20 @@ $(BUILD):
 # --- run it (animated) -------------------------------------------------------
 run: all
 	$(RUN) ./$(BUILD)/maze
+
+# --- the unsolvable maze: searches everywhere, finds no path, exits 1 --------
+unsolvable: all
+	$(RUN) ./$(BUILD)/maze 1 ; echo "exit code: $$?"
+
+# --- presentation pacing -----------------------------------------------------
+slow: all
+	MAZE_DELAY=140 $(RUN) ./$(BUILD)/maze
+fast: all
+	MAZE_DELAY=12 $(RUN) ./$(BUILD)/maze
+
+# --- guided, paused walkthrough for the 8-minute talk ------------------------
+demo: all ref
+	RUN="$(RUN)" ./demo.sh
 
 # --- debug: build with symbols and drop into gdb, ready to break in solve ----
 debug: src/maze.S src/maze_data.h | $(BUILD)
