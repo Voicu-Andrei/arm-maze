@@ -82,6 +82,35 @@ str_solved:.asciz "SOLVED!  (path found)"
 str_nopath:.asciz "NO PATH  (maze is unsolvable)"
 str_legend:.asciz "  legend:  R runner   * path   . visited   S start   G goal"
 
+/* ---- strings for the bit-inspection sub-commands -------------------------- */
+sc_bits:   .asciz "bits"
+sc_bytes:  .asciz "bytes"
+sc_deltas: .asciz "deltas"
+str_dirs:  .asciz "NESW"
+hdr_bits:  .asciz "CELL BYTE FORMAT  --  one byte per cell, eight bits\n\n  bit:    7      6      5     4      3    2    1    0\n  mean:  goal  start  path  seen    W    S    E    N\n         \\------- state -------/    \\----- walls -----/\n\nDecoding real cells straight from the maze bytes:\n\n"
+hdr_bytes: .asciz "MAZE AS RAW BYTES  --  .data, row-major, 64 bytes total\n\n"
+bv_cols:   .asciz "        c0   c1   c2   c3   c4   c5   c6   c7\n"
+bv_rpfx:   .asciz "  r"
+bv_gap:    .asciz "   "
+bv_foot:   .asciz "\n  (each byte = walls in the low nibble, state flags in the high nibble)\n"
+hdr_delta: .asciz "SIGNED MOVEMENT DELTAS  --  two's complement & sign extension\n  order N, E, S, W;  deltas are signed bytes stored in .rodata\n\n  dir   drow  dcol     drow byte     ldrsb -> 32-bit\n"
+dl_foot:   .asciz "\n  ldrsb sign-extends bit 7 across the whole register (0xFF -> -1),\n  while ldrb would zero-extend (0xFF -> 255).  Sign extension is what\n  makes a north/west step (delta -1) actually subtract 1 from the index.\n"
+lbl_walls: .asciz "        walls:  N="
+lbl_e:     .asciz "  E="
+lbl_s:     .asciz "  S="
+lbl_w:     .asciz "  W="
+lbl_state: .asciz "        state:  seen="
+lbl_path:  .asciz "  path="
+lbl_start: .asciz "  start="
+lbl_goal:  .asciz "  goal="
+cb_run:    .asciz "  runner cell ("
+cb_byte:   .asciz "):  byte = 0x"
+cb_seen:   .asciz "    seen="
+cb_pathb:  .asciz "  path="
+dl_d1:     .asciz "    "
+dl_d2:     .asciz "     "
+dl_d3:     .asciz "      0x"
+
 /* ===========================================================================
  * Mutable data  (the grids are written in place: seen/path bits get set)
  * ==========================================================================*/
@@ -597,6 +626,7 @@ emit_hud:
     mov   w0, #'\n'
     bl    putchar
 
+    bl    emit_curbyte               // live runner-cell byte (watch the bits flip)
     bl    emit_status                // "  status: ..."
     mov   w0, #'\n'
     bl    putchar
@@ -939,6 +969,431 @@ print_path:
     ret
     .size print_path, .-print_path
 
+/* ===========================================================================
+ * BIT-INSPECTION sub-commands  --  "go deeper": show the raw binary/data.
+ * (Chapter 4: every cell is one byte; walls & flags are individual bits;
+ *  movement deltas are two's-complement signed bytes, sign-extended.)
+ * ==========================================================================*/
+
+/* emit_hex(w0=value, w1=ndigits)  print ndigits hex digits, most significant
+ * first.  Used for bytes (2 digits) and sign-extended words (8 digits).      */
+    .type emit_hex, %function
+emit_hex:
+    stp   x29, x30, [sp, #-32]!
+    mov   x29, sp
+    stp   x19, x20, [sp, #16]
+    mov   w19, w0                    // value
+    mov   w20, w1                    // digits remaining
+.Lhx_loop:
+    cmp   w20, #0
+    b.le  .Lhx_done
+    sub   w1, w20, #1
+    lsl   w1, w1, #2                 // shift = (remaining-1)*4
+    lsr   w0, w19, w1
+    and   w0, w0, #0xF               // isolate one nibble
+    cmp   w0, #10
+    b.lt  1f
+    add   w0, w0, #('A' - 10)        // 10..15 -> 'A'..'F'
+    b     2f
+1:  add   w0, w0, #'0'               // 0..9 -> '0'..'9'
+2:  bl    putchar
+    sub   w20, w20, #1
+    b     .Lhx_loop
+.Lhx_done:
+    ldp   x19, x20, [sp, #16]
+    ldp   x29, x30, [sp], #32
+    ret
+    .size emit_hex, .-emit_hex
+
+/* emit_bin8(w0=byte)  print the 8 bits MSB-first, with a space between the
+ * two nibbles, e.g. 0x4D -> "0100 1101".                                     */
+    .type emit_bin8, %function
+emit_bin8:
+    stp   x29, x30, [sp, #-32]!
+    mov   x29, sp
+    stp   x19, x20, [sp, #16]
+    mov   w19, w0                    // byte
+    mov   w20, #7                    // bit index, 7 down to 0
+.Lb8_loop:
+    cmp   w20, #0
+    b.lt  .Lb8_done
+    lsr   w0, w19, w20               // bit = (byte >> i) & 1
+    and   w0, w0, #1
+    add   w0, w0, #'0'
+    bl    putchar
+    cmp   w20, #4                    // after the high nibble, print a space
+    b.ne  1f
+    mov   w0, #' '
+    bl    putchar
+1:  sub   w20, w20, #1
+    b     .Lb8_loop
+.Lb8_done:
+    ldp   x19, x20, [sp, #16]
+    ldp   x29, x30, [sp], #32
+    ret
+    .size emit_bin8, .-emit_bin8
+
+/* emit_bitval(w0=byte, w1=mask)  print '1' if any masked bit is set, else '0'. */
+    .type emit_bitval, %function
+emit_bitval:
+    stp   x29, x30, [sp, #-16]!
+    mov   x29, sp
+    and   w0, w0, w1
+    cmp   w0, #0
+    cset  w0, ne
+    add   w0, w0, #'0'
+    bl    putchar
+    ldp   x29, x30, [sp], #16
+    ret
+    .size emit_bitval, .-emit_bitval
+
+/* emit_int(w0=signed)  print a signed decimal (handles the negative deltas).  */
+    .type emit_int, %function
+emit_int:
+    stp   x29, x30, [sp, #-32]!
+    mov   x29, sp
+    str   x19, [sp, #16]
+    mov   w19, w0
+    cmp   w19, #0
+    b.ge  1f
+    mov   w0, #'-'                   // negative: print sign, then magnitude
+    bl    putchar
+    neg   w19, w19
+1:  mov   w0, w19
+    bl    emit_uint
+    ldr   x19, [sp, #16]
+    ldp   x29, x30, [sp], #32
+    ret
+    .size emit_int, .-emit_int
+
+/* decode_cell(w0=row, w1=col)  print one cell's byte fully decoded:
+ *   (r,c) = 0xHH = 0bBBBB BBBB
+ *           walls:  N=. E=. S=. W=.
+ *           state:  seen=. path=. start=. goal=.
+ * Saves x19=row, x20=col, x21=byte.                                          */
+    .type decode_cell, %function
+decode_cell:
+    stp   x29, x30, [sp, #-48]!
+    mov   x29, sp
+    stp   x19, x20, [sp, #16]
+    str   x21, [sp, #32]
+    mov   w19, w0
+    mov   w20, w1
+    bl    cell_addr                  // x0 = &cell
+    ldrb  w21, [x0]                  // w21 = the cell byte
+
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'('                   // "(r,c)"
+    bl    putchar
+    mov   w0, w19
+    bl    emit_uint
+    mov   w0, #','
+    bl    putchar
+    mov   w0, w20
+    bl    emit_uint
+    mov   w0, #')'
+    bl    putchar
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'='
+    bl    putchar
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'0'                   // "0xHH"
+    bl    putchar
+    mov   w0, #'x'
+    bl    putchar
+    mov   w0, w21
+    mov   w1, #2
+    bl    emit_hex
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'='
+    bl    putchar
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'0'                   // "0bBBBB BBBB"
+    bl    putchar
+    mov   w0, #'b'
+    bl    putchar
+    mov   w0, w21
+    bl    emit_bin8
+    mov   w0, #'\n'
+    bl    putchar
+
+    adrp  x0, lbl_walls              // "        walls:  N="
+    add   x0, x0, :lo12:lbl_walls
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #WALL_N
+    bl    emit_bitval
+    adrp  x0, lbl_e
+    add   x0, x0, :lo12:lbl_e
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #WALL_E
+    bl    emit_bitval
+    adrp  x0, lbl_s
+    add   x0, x0, :lo12:lbl_s
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #WALL_S
+    bl    emit_bitval
+    adrp  x0, lbl_w
+    add   x0, x0, :lo12:lbl_w
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #WALL_W
+    bl    emit_bitval
+    mov   w0, #'\n'
+    bl    putchar
+
+    adrp  x0, lbl_state              // "        state:  seen="
+    add   x0, x0, :lo12:lbl_state
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #F_SEEN
+    bl    emit_bitval
+    adrp  x0, lbl_path
+    add   x0, x0, :lo12:lbl_path
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #F_PATH
+    bl    emit_bitval
+    adrp  x0, lbl_start
+    add   x0, x0, :lo12:lbl_start
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #F_START
+    bl    emit_bitval
+    adrp  x0, lbl_goal
+    add   x0, x0, :lo12:lbl_goal
+    bl    emit_str
+    mov   w0, w21
+    mov   w1, #F_GOAL
+    bl    emit_bitval
+    mov   w0, #'\n'
+    bl    putchar
+    mov   w0, #'\n'
+    bl    putchar
+
+    ldr   x21, [sp, #32]
+    ldp   x19, x20, [sp, #16]
+    ldp   x29, x30, [sp], #48
+    ret
+    .size decode_cell, .-decode_cell
+
+/* view_bits()  the "bits" sub-command: explain the byte format, then decode a
+ * handful of representative cells (start, goal, and two interior cells).      */
+    .type view_bits, %function
+view_bits:
+    stp   x29, x30, [sp, #-16]!
+    mov   x29, sp
+    adrp  x0, hdr_bits
+    add   x0, x0, :lo12:hdr_bits
+    bl    emit_str
+    mov   w0, #START_R               // the start cell
+    mov   w1, #START_C
+    bl    decode_cell
+    mov   w0, #GOAL_R                // the goal cell
+    mov   w1, #GOAL_C
+    bl    decode_cell
+    mov   w0, #0                     // a wall-heavy interior cell
+    mov   w1, #4
+    bl    decode_cell
+    mov   w0, #3
+    mov   w1, #3
+    bl    decode_cell
+    ldp   x29, x30, [sp], #16
+    ret
+    .size view_bits, .-view_bits
+
+/* view_bytes()  the "bytes" sub-command: dump the maze as an 8x8 hex grid so
+ * the audience sees the maze IS just 64 bytes of data.                       */
+    .type view_bytes, %function
+view_bytes:
+    stp   x29, x30, [sp, #-48]!
+    mov   x29, sp
+    stp   x19, x20, [sp, #16]
+    str   x21, [sp, #32]
+    adrp  x0, hdr_bytes
+    add   x0, x0, :lo12:hdr_bytes
+    bl    emit_str
+    adrp  x0, bv_cols
+    add   x0, x0, :lo12:bv_cols
+    bl    emit_str
+    mov   w19, #0                    // row
+.Lvb_row:
+    cmp   w19, #MAZE_H
+    b.ge  .Lvb_done
+    adrp  x0, bv_rpfx                // "  r"
+    add   x0, x0, :lo12:bv_rpfx
+    bl    emit_str
+    mov   w0, w19
+    bl    emit_uint
+    mov   w0, #' '
+    bl    putchar
+    mov   w20, #0                    // col
+.Lvb_col:
+    cmp   w20, #MAZE_W
+    b.ge  .Lvb_rownext
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'0'
+    bl    putchar
+    mov   w0, #'x'
+    bl    putchar
+    mov   w0, w19                    // load byte (r,c)
+    mov   w1, w20
+    bl    cell_addr
+    ldrb  w21, [x0]
+    mov   w0, w21
+    mov   w1, #2
+    bl    emit_hex
+    add   w20, w20, #1
+    b     .Lvb_col
+.Lvb_rownext:
+    mov   w0, #'\n'
+    bl    putchar
+    add   w19, w19, #1
+    b     .Lvb_row
+.Lvb_done:
+    adrp  x0, bv_foot
+    add   x0, x0, :lo12:bv_foot
+    bl    emit_str
+    ldr   x21, [sp, #32]
+    ldp   x19, x20, [sp, #16]
+    ldp   x29, x30, [sp], #48
+    ret
+    .size view_bytes, .-view_bytes
+
+/* view_deltas()  the "deltas" sub-command: show each direction's SIGNED delta,
+ * the raw byte in binary, and the 32-bit value ldrsb produces (sign extended).*/
+    .type view_deltas, %function
+view_deltas:
+    stp   x29, x30, [sp, #-32]!
+    mov   x29, sp
+    str   x19, [sp, #16]
+    adrp  x0, hdr_delta
+    add   x0, x0, :lo12:hdr_delta
+    bl    emit_str
+    mov   w19, #0                    // direction index 0..3
+.Lvd_loop:
+    cmp   w19, #4
+    b.ge  .Lvd_done
+    adrp  x0, dl_d1                  // "    "  then the direction letter
+    add   x0, x0, :lo12:dl_d1
+    bl    emit_str
+    adrp  x0, str_dirs
+    add   x0, x0, :lo12:str_dirs
+    ldrb  w0, [x0, w19, uxtw]
+    bl    putchar
+    adrp  x0, dl_d1                  // gap, then signed drow
+    add   x0, x0, :lo12:dl_d1
+    bl    emit_str
+    adrp  x1, drow_tab
+    add   x1, x1, :lo12:drow_tab
+    ldrsb w0, [x1, w19, uxtw]        // SIGN-EXTENDED load of drow
+    bl    emit_int
+    adrp  x0, dl_d2                  // gap, then signed dcol
+    add   x0, x0, :lo12:dl_d2
+    bl    emit_str
+    adrp  x1, dcol_tab
+    add   x1, x1, :lo12:dcol_tab
+    ldrsb w0, [x1, w19, uxtw]
+    bl    emit_int
+    adrp  x0, dl_d2                  // gap, then drow's raw byte in binary
+    add   x0, x0, :lo12:dl_d2
+    bl    emit_str
+    adrp  x1, drow_tab
+    add   x1, x1, :lo12:drow_tab
+    ldrb  w0, [x1, w19, uxtw]        // ZERO-extended (raw 8 bits)
+    bl    emit_bin8
+    adrp  x0, dl_d3                  // "      0x", then sign-extended 32 bits
+    add   x0, x0, :lo12:dl_d3
+    bl    emit_str
+    adrp  x1, drow_tab
+    add   x1, x1, :lo12:drow_tab
+    ldrsb w0, [x1, w19, uxtw]        // ldrsb result as a 32-bit value
+    mov   w1, #8
+    bl    emit_hex
+    mov   w0, #'\n'
+    bl    putchar
+    add   w19, w19, #1
+    b     .Lvd_loop
+.Lvd_done:
+    adrp  x0, dl_foot
+    add   x0, x0, :lo12:dl_foot
+    bl    emit_str
+    ldr   x19, [sp, #16]
+    ldp   x29, x30, [sp], #32
+    ret
+    .size view_deltas, .-view_deltas
+
+/* emit_curbyte()  one HUD line that shows the runner cell's byte live, so the
+ * audience watches the seen/path BITS flip during the search.                */
+    .type emit_curbyte, %function
+emit_curbyte:
+    stp   x29, x30, [sp, #-48]!
+    mov   x29, sp
+    stp   x19, x20, [sp, #16]
+    str   x21, [sp, #32]
+    adrp  x0, cur_r
+    add   x0, x0, :lo12:cur_r
+    ldrb  w20, [x0]                  // runner row
+    adrp  x0, cur_c
+    add   x0, x0, :lo12:cur_c
+    ldrb  w21, [x0]                  // runner col
+    mov   w0, w20
+    mov   w1, w21
+    bl    cell_addr
+    ldrb  w19, [x0]                  // the runner cell byte
+    adrp  x0, cb_run                 // "  runner cell ("
+    add   x0, x0, :lo12:cb_run
+    bl    emit_str
+    mov   w0, w20
+    bl    emit_uint
+    mov   w0, #','
+    bl    putchar
+    mov   w0, w21
+    bl    emit_uint
+    adrp  x0, cb_byte                // "):  byte = 0x"
+    add   x0, x0, :lo12:cb_byte
+    bl    emit_str
+    mov   w0, w19
+    mov   w1, #2
+    bl    emit_hex
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, #'='
+    bl    putchar
+    mov   w0, #' '
+    bl    putchar
+    mov   w0, w19
+    bl    emit_bin8                  // the live 8 bits
+    adrp  x0, cb_seen                // "    seen="
+    add   x0, x0, :lo12:cb_seen
+    bl    emit_str
+    mov   w0, w19
+    mov   w1, #F_SEEN
+    bl    emit_bitval
+    adrp  x0, cb_pathb               // "  path="
+    add   x0, x0, :lo12:cb_pathb
+    bl    emit_str
+    mov   w0, w19
+    mov   w1, #F_PATH
+    bl    emit_bitval
+    mov   w0, #'\n'
+    bl    putchar
+    ldr   x21, [sp, #32]
+    ldp   x19, x20, [sp, #16]
+    ldp   x29, x30, [sp], #48
+    ret
+    .size emit_curbyte, .-emit_curbyte
+
 /* ---------------------------------------------------------------------------
  * read_flag_env(x0=name) -> w0 = 0 if value begins with '0', else 1
  * Small helper for the on/off env switches (MAZE_ANIM, MAZE_COLOR).
@@ -1006,23 +1461,55 @@ main:
     str   w0, [x1]
 
 .Lm_grid:
-    adrp  x0, grid0                  // default = solvable maze
-    add   x0, x0, :lo12:grid0
-    mov   x21, x0
-    cmp   w19, #2                    // argv[1] supplied?
-    b.lt  .Lm_setgrid
-    ldr   x1, [x20, #8]             // argv[1]
-    ldrb  w2, [x1]
-    cmp   w2, #'1'
-    b.ne  .Lm_setgrid
-    adrp  x0, grid1                  // "1" -> unsolvable maze
-    add   x0, x0, :lo12:grid1
-    mov   x21, x0
-.Lm_setgrid:
-    adrp  x0, grid_base
-    add   x0, x0, :lo12:grid_base
-    str   x21, [x0]
+    adrp  x0, grid0                  // default active grid = solvable maze
+    add   x0, x0, :lo12:grid0        //   (publish early: the views read it too)
+    adrp  x1, grid_base
+    add   x1, x1, :lo12:grid_base
+    str   x0, [x1]
 
+    cmp   w19, #2                    // was an argv[1] supplied?
+    b.lt  .Lm_solve
+    ldr   x21, [x20, #8]             // x21 = argv[1]
+
+    mov   x0, x21                    // "bits"   -> bit-decode view
+    adrp  x1, sc_bits
+    add   x1, x1, :lo12:sc_bits
+    bl    strcmp
+    cbz   w0, .Lm_bits
+    mov   x0, x21                    // "bytes"  -> raw hex-grid view
+    adrp  x1, sc_bytes
+    add   x1, x1, :lo12:sc_bytes
+    bl    strcmp
+    cbz   w0, .Lm_bytes
+    mov   x0, x21                    // "deltas" -> signed/two's-complement view
+    adrp  x1, sc_deltas
+    add   x1, x1, :lo12:sc_deltas
+    bl    strcmp
+    cbz   w0, .Lm_deltas
+
+    ldrb  w2, [x21]                  // otherwise: "1" selects the unsolvable maze
+    cmp   w2, #'1'
+    b.ne  .Lm_solve
+    adrp  x0, grid1
+    add   x0, x0, :lo12:grid1
+    adrp  x1, grid_base
+    add   x1, x1, :lo12:grid_base
+    str   x0, [x1]
+    b     .Lm_solve
+
+.Lm_bits:
+    bl    view_bits
+    b     .Lm_viewdone
+.Lm_bytes:
+    bl    view_bytes
+    b     .Lm_viewdone
+.Lm_deltas:
+    bl    view_deltas
+.Lm_viewdone:
+    mov   w0, #0                     // inspection views always exit 0
+    b     .Lm_exit
+
+.Lm_solve:
     mov   w0, #START_R               // solve from the start cell
     mov   w1, #START_C
     bl    solve
@@ -1042,6 +1529,7 @@ main:
     cmp   w19, #0                   // exit code: 0 solved, 1 not
     cset  w0, eq
 
+.Lm_exit:
     ldr   x21, [sp, #32]
     ldp   x19, x20, [sp, #16]
     ldp   x29, x30, [sp], #48

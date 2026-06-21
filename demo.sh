@@ -3,6 +3,11 @@
 # demo.sh -- guided, paused walkthrough of the A64 maze runner for the talk.
 # Run it with:  make demo     (or directly: ./demo.sh)
 # On the Pi leave RUN empty.  Off-Pi:  RUN="qemu-aarch64 -L /usr/aarch64-linux-gnu" ./demo.sh
+#
+# Stages map onto 3 speakers:
+#   Speaker 1  -> [1] data & bits        (Chapter 4)
+#   Speaker 2  -> [2] solve & call stack (Chapter 9) + [3] unsolvable
+#   Speaker 3  -> [4] verify vs C        + [5] gdb on the real stack
 # ============================================================================
 set -u
 RUN="${RUN:-}"
@@ -18,7 +23,7 @@ bold "CM-203 Project 2 -- AArch64 Maze Runner"
 rule
 cat <<'EOF'
   A maze solver written in PURE A64 assembly.
-    * each cell is one byte; walls + state are individual BITS
+    * each cell is one BYTE; walls + state are individual BITS
     * movement uses SIGNED deltas (two's complement, sign-extended)
     * the solver is a RECURSIVE depth-first search --
       and the CALL STACK you see on screen IS the path it is walking.
@@ -26,23 +31,46 @@ EOF
 echo
 pause
 
+# ---------------------------------------------------------------- SPEAKER 1 --
 clear
-bold "[1/4]  Solve the maze  (watch the call stack grow and shrink)"
+bold "[1/5]  SPEAKER 1 -- the DATA: a maze is just bytes and bits  (Chapter 4)"
 rule
-echo "  Watch the HUD: 'stack depth' is the live recursion depth, and"
-echo "  'call stack' lists the frames -- on a dead end the runner walks BACK."
+echo "  First, the whole maze as raw bytes -- 64 of them, one per cell:"
+echo
+$RUN "$BIN" bytes
+pause
+clear
+bold "[1/5]  ... and what the bits inside one byte mean"
+rule
+$RUN "$BIN" bits
+pause
+clear
+bold "[1/5]  ... and the SIGNED move deltas (two's complement + sign extension)"
+rule
+$RUN "$BIN" deltas
+echo
+echo "  ldrsb turns the byte 0xFF into -1; that is how a north step subtracts 1."
+pause
+
+# ---------------------------------------------------------------- SPEAKER 2 --
+clear
+bold "[2/5]  SPEAKER 2 -- the SEARCH: watch the call stack grow and shrink"
+rule
+echo "  HUD: 'stack depth' is the live recursion depth; 'call stack' lists the"
+echo "  live solve() frames; 'runner cell' shows that cell's byte in BINARY"
+echo "  (watch the seen bit flip 0->1 on entry, path bit on the way back)."
+echo "  On a dead end the runner walks BACK -- that is ldp .. ret popping a frame."
 echo
 pause
 MAZE_DELAY="${MAZE_DELAY:-55}" $RUN "$BIN"
 echo
-echo "  ^ It explored, backtracked at dead ends, and highlighted the path in green."
-echo "  Exit code (0 = solved): $?"
+echo "  Explored, backtracked, highlighted the path in green.  Exit code: $?"
 pause
 
 clear
-bold "[2/4]  An UNSOLVABLE maze  (the goal is walled off on all sides)"
+bold "[3/5]  SPEAKER 2 -- an UNSOLVABLE maze  (goal walled off on all sides)"
 rule
-echo "  Same code, different data. It searches everywhere, finds nothing,"
+echo "  Same assembly, different DATA. It searches everywhere, finds nothing,"
 echo "  and reports failure through the process EXIT CODE."
 echo
 pause
@@ -52,8 +80,9 @@ echo
 printf "  Exit code (1 = no path): \033[1;91m%s\033[0m\n" "$ec"
 pause
 
+# ---------------------------------------------------------------- SPEAKER 3 --
 clear
-bold "[3/4]  Is the assembly CORRECT?  Check it against a C reference"
+bold "[4/5]  SPEAKER 3 -- is it CORRECT?  diff the A64 against a C reference"
 rule
 echo "  Both solvers share the SAME maze bytes and SAME search order, then"
 echo "  print the same canonical line. We diff them for every maze."
@@ -77,20 +106,20 @@ fi
 pause
 
 clear
-bold "[4/4]  The recursion, under the debugger (optional, live)"
+bold "[5/5]  SPEAKER 3 -- the recursion under the debugger (live)"
 rule
 cat <<'EOF'
-  In another step you can show the real machine stack:
+  Show the REAL machine stack and tie it to the on-screen "call stack":
 
       make debug
       (gdb) break solve
       (gdb) run
       (gdb) bt                 # each frame = one cell on the current trail
       (gdb) info reg x19 x20   # this frame's row / col
-      (gdb) continue
+      (gdb) continue           # step the recursion; watch bt grow / shrink
 
-  The gdb backtrace and the on-screen "call stack" are the same thing:
-  the AAPCS64 stack frames saved by stp x29,x30 / restored by ldp ... ret.
+  The gdb backtrace and the HUD "call stack" are the same thing: the AAPCS64
+  frames saved by  stp x29,x30  and restored by  ldp .. ret.
 EOF
 echo
 bold "Done. Thanks!"

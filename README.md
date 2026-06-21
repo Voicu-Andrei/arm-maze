@@ -51,12 +51,33 @@ Requires a 64-bit OS (`uname -m` → `aarch64`) and `build-essential gdb git`.
 make run          # build, then watch it solve (animated, with the call-stack HUD)
 make unsolvable   # the no-path maze: searches, fails, exits 1
 make slow / fast  # same solve, slower / faster animation (handy when presenting)
+make bits         # decode cell bytes into labelled binary       (Chapter 4)
+make bytes        # dump the maze as a raw 8x8 hex grid           (Chapter 4)
+make deltas       # signed deltas: two's complement & sign ext.   (Chapter 4)
+make inspect      # all three data views in sequence
 make demo         # guided, paused walkthrough for the talk
 make verify       # build A64 + C reference, compare results -> PASS
 make debug        # build with -g and open gdb, ready to break in solve()
 make ref          # build only the C reference
 make clean        # remove build/
 ```
+
+### Going deeper — visualise the raw bytes and bits (Chapter 4)
+
+Three static sub-commands let you inspect the data representation directly. They
+take no animation and are ideal for talking through:
+
+```bash
+./build/maze bytes      # the maze IS 64 bytes -- shown as an 8x8 hex grid
+./build/maze bits       # decode cell bytes:  (0,0) = 0x4D = 0100 1101  + labels
+./build/maze deltas     # signed move deltas: -1 = 1111 1111, ldrsb -> 0xFFFFFFFF
+```
+
+For example, `maze bits` prints, per cell, the byte in hex and **binary** with every
+bit labelled (`walls: N E S W`, `state: seen path start goal`); `maze deltas` shows
+two's complement and how `ldrsb` **sign-extends** a −1 delta where `ldrb` would not.
+During an animated solve the HUD also shows the **runner cell's byte live in binary**,
+so you can watch the `seen` and `path` bits flip as the search runs.
 
 Native on the Pi needs no special flags — `make` invokes `gcc src/maze.S` which runs the
 preprocessor, assembler, and linker, and links against libc in one step.

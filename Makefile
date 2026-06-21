@@ -5,6 +5,10 @@
 #     make run          # build + watch the animated solve (with live call stack)
 #     make unsolvable   # watch it fail on a maze with no path (exit code 1)
 #     make slow / fast  # same solve, slower / faster animation (for presenting)
+#     make bits         # decode cell bytes into labelled binary (Chapter 4)
+#     make bytes        # dump the maze as a raw 8x8 hex grid (it IS just bytes)
+#     make deltas       # signed deltas: two's complement & sign extension
+#     make inspect      # all three data views, in sequence
 #     make demo         # guided, paused walkthrough for the presentation
 #     make verify       # confirm the A64 result matches the C reference -> PASS
 #     make debug        # break in solve(), inspect the recursive call stack
@@ -23,7 +27,7 @@ RUN     ?=                      # empty on the Pi; set to qemu-... for emulation
 CFLAGS  ?= -Wall -O2
 BUILD    = build
 
-.PHONY: all run unsolvable slow fast demo debug ref verify clean
+.PHONY: all run unsolvable slow fast bits bytes deltas inspect demo debug ref verify clean
 
 # --- assemble + link the A64 program (gcc drives cpp -> as -> ld, links libc) --
 all: $(BUILD)/maze
@@ -53,6 +57,18 @@ slow: all
 	MAZE_DELAY=140 $(RUN) ./$(BUILD)/maze
 fast: all
 	MAZE_DELAY=12 $(RUN) ./$(BUILD)/maze
+
+# --- bit / data inspection views (Chapter 4: binary & data representation) ---
+bits: all
+	$(RUN) ./$(BUILD)/maze bits
+bytes: all
+	$(RUN) ./$(BUILD)/maze bytes
+deltas: all
+	$(RUN) ./$(BUILD)/maze deltas
+inspect: all
+	@$(RUN) ./$(BUILD)/maze bytes
+	@$(RUN) ./$(BUILD)/maze bits
+	@$(RUN) ./$(BUILD)/maze deltas
 
 # --- guided, paused walkthrough for the 8-minute talk ------------------------
 demo: all ref
