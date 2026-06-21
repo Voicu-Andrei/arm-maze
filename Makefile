@@ -24,10 +24,13 @@
 
 CC      ?= gcc                 # native cc on the Pi; override for cross builds
 RUN     ?=                      # empty on the Pi; set to qemu-... for emulation
+OBJDUMP ?= objdump             # for `make disasm`; cross: aarch64-linux-gnu-objdump
+GDB     ?= gdb                 # for `make trace`;  cross: gdb-multiarch
+FUNC    ?= solve               # which routine `make disasm` shows
 CFLAGS  ?= -Wall -O2
 BUILD    = build
 
-.PHONY: all run unsolvable slow fast bits bytes deltas inspect demo debug ref verify clean
+.PHONY: all run unsolvable slow fast bits bytes deltas inspect disasm trace asm-tour demo debug ref verify clean
 
 # --- assemble + link the A64 program (gcc drives cpp -> as -> ld, links libc) --
 all: $(BUILD)/maze
@@ -69,6 +72,23 @@ inspect: all
 	@$(RUN) ./$(BUILD)/maze bytes
 	@$(RUN) ./$(BUILD)/maze bits
 	@$(RUN) ./$(BUILD)/maze deltas
+
+# --- assembly deep dive (Chapter 9: A64 + the calling convention) ------------
+# disasm: show a routine's source interleaved with the real encoded instructions
+#         (override the routine with FUNC=, e.g. `make disasm FUNC=move`)
+disasm: src/maze.S src/maze_data.h | $(BUILD)
+	$(CC) -g src/maze.S -o $(BUILD)/maze
+	$(OBJDUMP) -S --disassemble=$(FUNC) ./$(BUILD)/maze
+
+# trace: automated debugger run -- step into the recursion and show the real
+#        stack frames stacking up (sp/x29 dropping 64 bytes per level)
+trace: src/maze.S src/maze_data.h trace.gdb | $(BUILD)
+	$(CC) -g src/maze.S -o $(BUILD)/maze
+	$(GDB) -q -batch -x trace.gdb ./$(BUILD)/maze
+
+# asm-tour: guided, paused deep dive (register roles, disassembly, live trace)
+asm-tour:
+	CC="$(CC)" OBJDUMP="$(OBJDUMP)" GDB="$(GDB)" ./asm-tour.sh
 
 # --- guided, paused walkthrough for the 8-minute talk ------------------------
 demo: all ref

@@ -79,6 +79,25 @@ two's complement and how `ldrsb` **sign-extends** a −1 delta where `ldrb` woul
 During an animated solve the HUD also shows the **runner cell's byte live in binary**,
 so you can watch the `seen` and `path` bits flip as the search runs.
 
+### Going deeper — the assembly itself (Chapter 9)
+
+Three commands drop below the source to the real machine code and the live stack:
+
+```bash
+make disasm           # solve() with source comments interleaved with the
+                      #   actual encoded instructions (FUNC=move, cell_addr, ...)
+make trace            # automated gdb run: step into the recursion and watch the
+                      #   real stack frames stack up (sp/x29 drop 64 bytes/level)
+make asm-tour         # guided, paused deep dive: register roles -> disassembly
+                      #   -> prologue/epilogue -> live debugger trace
+```
+
+`make disasm` shows, e.g., `ldrsb w4, [x3, w2, sxtw]` next to its encoding `0x38e2c864`,
+and the `solve` skeleton reveals `bl <solve>` — the function branching to its *own*
+address (recursion) — bracketed by the `stp …` prologue and `ldp … ret` epilogue.
+`make trace` prints a backtrace of nested `solve` frames — exactly the on-screen
+"call stack", now with real addresses. (Both need `gdb`/`objdump`, already on the Pi.)
+
 Native on the Pi needs no special flags — `make` invokes `gcc src/maze.S` which runs the
 preprocessor, assembler, and linker, and links against libc in one step.
 
@@ -178,9 +197,11 @@ wall), so checking the current cell's wall bit alone is sufficient.
 ```
 .
 ├── README.md            # this file
-├── PRESENTATION.md      # 8-minute talk script
-├── Makefile             # all, run, unsolvable, slow, fast, demo, debug, ref, verify, clean
+├── PRESENTATION.md      # 8-minute talk script (3 speakers)
+├── Makefile             # build/run/inspect/disasm/trace/verify/... targets
 ├── demo.sh              # hands-free, paused walkthrough (used by `make demo`)
+├── asm-tour.sh          # guided assembly deep dive (used by `make asm-tour`)
+├── trace.gdb            # automated debugger recursion trace (used by `make trace`)
 ├── src/
 │   ├── maze.S           # the A64 implementation (heavily commented)
 │   ├── maze_data.h      # SINGLE SOURCE of the maze bytes/dims (shared by asm + C)

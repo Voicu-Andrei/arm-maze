@@ -108,6 +108,36 @@ native on the Pi. Thanks."
 
 ---
 
+---
+
+## Optional — Assembly deep-dive (great for Q&A, or a longer slot)
+
+If you have more time, or get an "how does the assembly actually work?" question,
+go one level lower than the source. `make asm-tour` is a guided, paused version of
+all of this (like `make demo`, but about the machine code).
+
+**`make disasm FUNC=move`** — one routine, source comments interleaved with the
+**real encoded instructions**:
+```
+    ldrsb w4, [x3, w2, sxtw]   // w4 = drow[dir], SIGN-EXTENDED
+     964:  38e2c864    ldrsb  w4, [x3, w2, sxtw]
+```
+"The comment, the mnemonic, and the 32-bit encoding `0x38e2c864` are the same
+instruction at three levels." (`FUNC=solve`, `cell_addr`, … also work.)
+
+**`make disasm FUNC=solve | grep` the frame ops** — the calling convention in
+isolation: `stp x29, x30, [sp,#-64]!` (prologue) … `bl <solve>` (the recursion —
+the function branches to *its own address*) … `ldp … ret` (epilogue).
+
+**`make trace`** — an automated debugger run: it steps a few levels into the
+recursion and prints the **real stack**, with `sp`/`x29` dropping by exactly
+`0x40` (64 bytes) per level, then a backtrace of nested `solve` frames. This is
+the same thing the on-screen "call stack" shows — now with real addresses.
+
+> These need `gdb`/`objdump` (already on the Pi via `build-essential gdb`).
+
+---
+
 ## Command cheat sheet
 | Command | Owner | Shows |
 |---|---|---|
@@ -118,6 +148,7 @@ native on the Pi. Thanks."
 | `make unsolvable` | S2 | no-path maze, exit code 1 |
 | `make verify` | S3 | A64 == C reference → PASS |
 | `make debug` | S3 | gdb: `break solve`, `bt`, `info reg x19 x20` |
+| `make disasm` / `make trace` / `make asm-tour` | any | assembly deep-dive (machine code + live stack) |
 | `make demo` | all | hands-free, paused, labelled walkthrough |
 
 ## If something goes wrong
