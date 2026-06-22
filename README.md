@@ -26,8 +26,9 @@ The **call stack** line is the whole point made visible: it is exactly the chain
 `S` start · `R` runner (current cell) · `*` solution path · `.` visited/backtracked ·
 `G` goal (until reached) · walls drawn from the cell's wall bits.
 
-> **Presenting this?** See **[PRESENTATION.md](PRESENTATION.md)** for an 8-minute script,
-> and run **`make demo`** for a hands-free, paused walkthrough.
+> **Presenting this?** See **[PRESENTATION.md](PRESENTATION.md)** for a 3-speaker script,
+> and run **`make demo`** — one hands-free, paused walkthrough that combines the
+> behaviour demo and the assembly deep dive (with speaker hand-off cards).
 
 ---
 
@@ -55,7 +56,7 @@ make bits         # decode cell bytes into labelled binary       (Chapter 4)
 make bytes        # dump the maze as a raw 8x8 hex grid           (Chapter 4)
 make deltas       # signed deltas: two's complement & sign ext.   (Chapter 4)
 make inspect      # all three data views in sequence
-make demo         # guided, paused walkthrough for the talk
+make demo         # full guided walkthrough (data + search + assembly, 3 speakers)
 make verify       # build A64 + C reference, compare results -> PASS
 make debug        # build with -g and open gdb, ready to break in solve()
 make ref          # build only the C reference
@@ -197,9 +198,9 @@ wall), so checking the current cell's wall bit alone is sufficient.
 ```
 .
 ├── README.md            # this file
-├── PRESENTATION.md      # 8-minute talk script (3 speakers)
+├── PRESENTATION.md      # talk script (3 speakers, balanced by time)
 ├── Makefile             # build/run/inspect/disasm/trace/verify/... targets
-├── demo.sh              # hands-free, paused walkthrough (used by `make demo`)
+├── demo.sh              # combined 3-speaker walkthrough (used by `make demo`)
 ├── asm-tour.sh          # guided assembly deep dive (used by `make asm-tour`)
 ├── trace.gdb            # automated debugger recursion trace (used by `make trace`)
 ├── src/

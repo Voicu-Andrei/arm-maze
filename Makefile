@@ -9,7 +9,8 @@
 #     make bytes        # dump the maze as a raw 8x8 hex grid (it IS just bytes)
 #     make deltas       # signed deltas: two's complement & sign extension
 #     make inspect      # all three data views, in sequence
-#     make demo         # guided, paused walkthrough for the presentation
+#     make demo         # full guided walkthrough: data + search + assembly,
+#                       #   split across 3 speakers (includes the slow solve)
 #     make verify       # confirm the A64 result matches the C reference -> PASS
 #     make debug        # break in solve(), inspect the recursive call stack
 #
@@ -90,9 +91,11 @@ trace: src/maze.S src/maze_data.h trace.gdb | $(BUILD)
 asm-tour:
 	CC="$(CC)" OBJDUMP="$(OBJDUMP)" GDB="$(GDB)" ./asm-tour.sh
 
-# --- guided, paused walkthrough for the 8-minute talk ------------------------
-demo: all ref
-	RUN="$(RUN)" ./demo.sh
+# --- guided, paused walkthrough: data + search + assembly, 3 speakers --------
+#   Combines the behaviour demo AND the assembly deep dive into one flow,
+#   split across 3 speakers and balanced by time (includes the SLOW solve).
+demo:
+	CC="$(CC)" OBJDUMP="$(OBJDUMP)" GDB="$(GDB)" RUN="$(RUN)" ./demo.sh
 
 # --- debug: build with symbols and drop into gdb, ready to break in solve ----
 debug: src/maze.S src/maze_data.h | $(BUILD)

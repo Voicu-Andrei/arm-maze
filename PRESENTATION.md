@@ -1,159 +1,79 @@
-# 8-Minute Presentation Guide (3 speakers, terminal-only)
+# Presentation Guide — 3 speakers, terminal only
 
-No slides — the program *is* the presentation. Three speakers, ~8 minutes.
-The live demos carry it; you narrate what's on screen.
+No slides. One command runs the whole thing:
 
-> **Before you start:** maximise the terminal on the Pi (so the maze + HUD don't
-> scroll — it needs ~24 rows), and pre-build: `make all ref`.
->
-> One-button option: **`make demo`** runs this whole flow paused between stages
-> (it even labels which speaker is up). Use it if you'd rather not type live.
+```bash
+make demo
+```
 
-The thesis to keep hammering: **a maze is just bytes and bits, and the recursive
-call stack you see on screen IS the path.**
+`make demo` is a single guided walkthrough that combines the **behaviour demo**
+and the **assembly deep dive**. It pauses between every slide, shows a full-screen
+**hand-off card** before each speaker, and includes the **slow** animated solve.
+You just press Enter to advance and narrate what's on screen.
+
+> Maximise the terminal first (the maze + HUD need ~24 rows). Total run ≈ **10 min**.
+> To land nearer 8, skip the slides marked **[trim]** below.
+
+The slides are split across 3 speakers and **balanced by time** — not by count —
+because the slow solve alone is ~2 minutes, so Speaker 2 owns fewer slides.
+
+**The one thesis to keep repeating:** *the recursion you watch on screen IS the
+call stack.*
 
 ---
 
-## Speaker 1 — “It’s all bytes and bits” (Chapter 4) · ~2.5 min
+## Speaker 1 — “It’s all bytes and bits” (Chapter 4) · ~3:00
 
-**0:00 – 0:30 — Framing.** "We wrote a maze solver in **pure ARM64 assembly**,
-running natively on this Pi. No graphics library — just bytes, bits, and the CPU."
+| Slide | ~Time | You say |
+|---|---|---|
+| 1. maze as 64 raw bytes (`bytes`) | 0:45 | "The whole maze is **64 bytes** in `.data`, one per cell. A cell address is `base + row*8 + col` — that's the `madd` instruction." |
+| 2. inside one byte (`bits`) | 0:55 | "Each byte is 8 bits: low nibble = the four **walls**, high nibble = **state** (seen/path/start/goal). Reading a wall is `ldrb` + `and`; setting `seen` is `ldrb`→`orr`→`strb`." |
+| 3. signed deltas (`deltas`) | 0:50 | "North is row **−1** = `1111 1111` in two's complement. `ldrsb` **sign-extends** it to `0xFFFFFFFF` so the add subtracts 1. `ldrb` would give 255 — wrong." |
 
-**0:30 – 1:10 — The maze is data.** Run:
-```
-make bytes
-```
-- "The entire maze is **64 bytes** in `.data` — one byte per cell, row-major."
-- "Address of a cell is `base + row*8 + col` — that's scaled addressing in `madd`."
+(+ the ~0:30 title/framing card.)
 
-**1:10 – 2:00 — Inside one byte.** Run:
-```
-make bits
-```
-- "Each byte is **8 bits**: the low nibble is the four **walls** (N/E/S/W), the
-  high nibble is **state** — seen, path, start, goal."
-- Point at `(0,0) = 0x4D = 0100 1101`: "Reading a wall is one `ldrb` + `and` with
-  a mask. Setting `seen` is `ldrb` → `orr` → `strb`."
+## Speaker 2 — “Watch it think” (the search) · ~3:25
 
-**2:00 – 2:30 — Signed deltas.** Run:
-```
-make deltas
-```
-- "Moving north is row **−1**. In a byte that's `1111 1111` — **two's complement**.
-  `ldrsb` **sign-extends** it to `0xFFFFFFFF` so the add actually subtracts 1."
-- "Use `ldrb` instead and you'd get 255 — wrong direction. This is the whole
-  point of signed loads." *(Hand off to Speaker 2.)*
+| Slide | ~Time | You say |
+|---|---|---|
+| 1. the **slow** animated solve | 2:00 | Narrate the HUD: **`stack depth`** = live recursion depth; **`call stack`** = the live frames, *this list is the path*; **`runner cell`** = that cell's byte in binary, watch the **`seen` bit flip**; on a dead end the frame **pops and the runner walks back**; at the goal the **green path lights up** back to the start. |
+| 2. unsolvable maze | 0:50 | "Same assembly, different **data** — goal walled off. It searches everything, backtracks all the way out, and reports failure via **exit code 1**." |
+| 3. verify vs C **[trim]** | 0:35 | "A **C reference** solves the same bytes in the same order; we diff them — **PASS**. Same maze defined once in a shared header, so they can't drift." |
 
----
+## Speaker 3 — “Down to the metal” (Chapter 9 / AAPCS64) · ~3:30
 
-## Speaker 2 — “Watch the recursion run” (Chapter 9) · ~3 min
+| Slide | ~Time | You say |
+|---|---|---|
+| 1. register roles | 0:45 | "`x0–x7` args; `x19–x28` **callee-saved** (we keep row/col there across recursion); `x29` frame pointer; `x30` link register — where `ret` returns; `sp` grows down. Recursion works because each call saves its **own** `x30`." |
+| 2. `move()` disassembled | 0:45 | "Source comment, mnemonic, and the 32-bit encoding `0x38e2c864` are the **same** `ldrsb` — the sign-extending load from Speaker 1, for real." |
+| 3. `solve()` prologue/call/epilogue | 0:50 | "`stp x29, x30, [sp,#-64]!` pushes the frame; **`bl <solve>` branches to its own address** — that's the recursion; `ldp … ret` restores the frame and returns." |
+| 4. **live** gdb trace **[trim]** | 0:55 | "Stepping into the recursion: `x29`/`sp` drop by exactly **0x40 = 64 bytes** per level, then a backtrace of nested `solve` frames. **This is the on-screen call stack — for real.**" |
 
-**2:30 – 4:30 — The animated solve.** Run (slow enough to talk over):
-```
-make slow      # or: make run
-```
-Narrate the HUD live:
-- "`R` (cyan) is the runner; grey `.` are visited cells."
-- **`runner cell` line:** "That's the current cell's byte in **binary** — watch the
-  **seen bit flip 0→1** the moment we step in. That's the `orr` from Speaker 1."
-- **`stack depth`:** "The live recursion depth — how many `solve` calls are on the
-  stack right now."
-- **`call stack`:** "These are the actual frames, start → runner. **This list is
-  the path.**"
-- **At a dead end:** "No open direction — `solve` returns, the frame is **popped**
-  (`backtracks` ticks up), and the runner **walks back**. That return is
-  `ldp x29, x30 … ret` restoring the saved link register."
-- **At the goal:** "Found it — as each call returns it marks its cell, so the
-  **green path lights up from the goal back to the start.** Exit code 0."
-
-**4:30 – 5:30 — Unsolvable maze.** Run:
-```
-make unsolvable
-```
-- "Same assembly, different **data** — the goal is walled off. It searches every
-  reachable cell, backtracks all the way out, and reports failure via the
-  **exit code: 1**." *(Hand off to Speaker 3.)*
+(+ the ~0:15 wrap card: "bytes, bits, signed deltas, and a recursive DFS where the
+call stack is the path — pure A64, verified against C, native on the Pi. Thanks.")
 
 ---
 
-## Speaker 3 — “Prove it’s right” · ~2 min + buffer
+## Individual commands (for rehearsal / Q&A)
+Everything `make demo` does is also a standalone target:
 
-**5:30 – 6:30 — Verify against C.** Run:
-```
-make verify
-```
-- "How do we know the assembly is correct? A **C reference** solves the *same*
-  maze bytes in the *same* order and prints the *same* canonical line — we diff
-  them for both mazes. **PASS.**"
-- "The maze is defined **once** in a header both the assembly and the C `#include`,
-  so they can't silently drift apart."
-
-**6:30 – 7:45 — The real stack in gdb.** Run:
-```
-make debug
-(gdb) break solve
-(gdb) run
-(gdb) bt                 # frames stack up as it recurses
-(gdb) info reg x19 x20   # row / col, held in callee-saved registers
-(gdb) continue
-```
-- "Every line of this backtrace is one `solve` frame — **exactly** the on-screen
-  `call stack`. It grows as we recurse and shrinks as we `ret`."
-- Optionally show the prologue/epilogue in `src/maze.S`
-  (`stp x29, x30, [sp,#-64]!` … `ldp … ret`).
-
-**7:45 – 8:00 — Close.** "One byte per cell, bits for walls, signed deltas, and a
-recursive DFS where the **call stack is the path** — verified against C, running
-native on the Pi. Thanks."
-
----
-
----
-
-## Optional — Assembly deep-dive (great for Q&A, or a longer slot)
-
-If you have more time, or get an "how does the assembly actually work?" question,
-go one level lower than the source. `make asm-tour` is a guided, paused version of
-all of this (like `make demo`, but about the machine code).
-
-**`make disasm FUNC=move`** — one routine, source comments interleaved with the
-**real encoded instructions**:
-```
-    ldrsb w4, [x3, w2, sxtw]   // w4 = drow[dir], SIGN-EXTENDED
-     964:  38e2c864    ldrsb  w4, [x3, w2, sxtw]
-```
-"The comment, the mnemonic, and the 32-bit encoding `0x38e2c864` are the same
-instruction at three levels." (`FUNC=solve`, `cell_addr`, … also work.)
-
-**`make disasm FUNC=solve | grep` the frame ops** — the calling convention in
-isolation: `stp x29, x30, [sp,#-64]!` (prologue) … `bl <solve>` (the recursion —
-the function branches to *its own address*) … `ldp … ret` (epilogue).
-
-**`make trace`** — an automated debugger run: it steps a few levels into the
-recursion and prints the **real stack**, with `sp`/`x29` dropping by exactly
-`0x40` (64 bytes) per level, then a backtrace of nested `solve` frames. This is
-the same thing the on-screen "call stack" shows — now with real addresses.
-
-> These need `gdb`/`objdump` (already on the Pi via `build-essential gdb`).
-
----
-
-## Command cheat sheet
 | Command | Owner | Shows |
 |---|---|---|
-| `make bytes` | S1 | maze as a 64-byte hex grid |
-| `make bits` | S1 | cell bytes decoded into labelled binary |
-| `make deltas` | S1 | signed deltas, two's complement, sign extension |
-| `make slow` / `make run` / `make fast` | S2 | animated solve + live call stack + live byte |
+| `make bytes` / `bits` / `deltas` | S1 | the data views |
+| `make slow` (or `run` / `fast`) | S2 | animated solve + live call stack + live byte |
 | `make unsolvable` | S2 | no-path maze, exit code 1 |
-| `make verify` | S3 | A64 == C reference → PASS |
-| `make debug` | S3 | gdb: `break solve`, `bt`, `info reg x19 x20` |
-| `make disasm` / `make trace` / `make asm-tour` | any | assembly deep-dive (machine code + live stack) |
-| `make demo` | all | hands-free, paused, labelled walkthrough |
+| `make verify` | S2 | A64 == C reference → PASS |
+| `make disasm` (`FUNC=move`, …) | S3 | source interleaved with real machine code |
+| `make trace` | S3 | automated gdb: stack frames stacking up |
+| `make asm-tour` | S3 | just the assembly deep-dive, guided |
+| `make debug` | S3 | manual gdb: `break solve`, `bt`, `info reg x19 x20` |
 
 ## If something goes wrong
 - **Maze scrolls / looks broken:** terminal too short — maximise it or shrink the
   font; the maze + HUD need ~24 rows.
 - **No colour:** `MAZE_COLOR=0 make run`, or the terminal lacks ANSI — still works
   in plain text.
-- **Too fast / slow:** `MAZE_DELAY=<ms> ./build/maze` (e.g. 150 slow, 15 fast).
+- **Solve too slow / fast for the room:** the demo uses `MAZE_DELAY=130`; override
+  with `MAZE_DELAY=90 make demo` (faster) or `200` (slower).
+- **`make trace` / `make disasm` error:** need `gdb` / `objdump` — already present
+  on the Pi via `build-essential gdb`.
