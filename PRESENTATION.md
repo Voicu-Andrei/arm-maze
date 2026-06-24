@@ -7,9 +7,20 @@ make demo
 ```
 
 `make demo` is a single guided walkthrough that combines the **behaviour demo**
-and the **assembly deep dive**. It pauses between every slide, shows a full-screen
-**hand-off card** before each speaker, and includes the **slow** animated solve.
-You just press Enter to advance and narrate what's on screen.
+and the **assembly deep dive**. It shows a full-screen **hand-off card** before
+each speaker and **waits at every slide** — including after the maze finishes
+solving (keystrokes pressed *during* the animation are discarded, so it never
+skips ahead). Navigate with:
+
+```
+  [Enter] / n   next slide
+  b / p         back to the previous slide
+  r             replay this slide  (re-run the maze, re-show a view)
+  q             quit
+```
+
+You just narrate what's on screen; press `b` if you need to revisit a slide, or
+`r` to replay the solve.
 
 > Maximise the terminal first (the maze + HUD need ~24 rows). Total run ≈ **10 min**.
 > To land nearer 8, skip the slides marked **[trim]** below.
